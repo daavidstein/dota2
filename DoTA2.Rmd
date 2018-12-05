@@ -1,0 +1,446 @@
+---
+title: "DoTA2"
+author: "Daavid Stein"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r, echo=FALSE, out.width = '85%'}
+# knitr::include_graphics()
+```
+
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(tidy=TRUE)
+knitr::opts_chunk$set(tidy.opts=list(width.cutoff=70))
+knitr::opts_chunk$set(fig.height=4, fig.width=6)
+```
+##Note about this Document
+
+This document in its current revision is an excerpt from a larger document which was a group effort. The other contributors to the original document were Naimul Chowdhury (github: NaimulChowdhury) and Diana Sujanto (github: dsujant). The original document is hosted in a repository on Naim's github. Although Naim gave me his permission to fork the entire repository to my github, for now I have elected to only include those sections for which I was the sole author. I have done this because I am trying to built a portfolio of sorts on github, and I would like potential employers to easily be able to discern which work is mine. For completeness, I may at a later date incorporate Naim and Diana's work into this document if I can do it in a way which will enable readers to clearly and quickly distinguish the author of each section.
+
+### libraries
+Load in needed libraries 
+```{r libraries ,include =FALSE}
+
+#install.packages(data.table)
+#install.packages(dplyr)
+#install.packages(ggplot2)
+
+
+
+
+PKGs <- c("data.table","dplyr","ggplot2")
+
+
+lapply(PKGs, library, character.only = TRUE ,quietly = T,  warn.conflicts = FALSE)
+```
+
+
+## 2. File management
+### Create variables for directories
+```{r file_management}
+
+project.dir = "/home/broken-haiku/Desktop/NCF_Data_Science/Munging/Project2/Dota_2_Visualization_Project"
+output.dir <- "/Output"
+data.dir = "Datasets/dota2"
+setwd(project.dir)
+
+```
+
+
+
+###Defense of the Ancients
+I analyzed data from the Dota 2 matches dataset on Kaggle (https://www.kaggle.com/devinanzelmo/dota-2-matches) with the aim of producing some informative plots.
+
+Dota 2 is a 5 v 5 team game where players play one of out of over 100 heroes:
+
+```{r, include = FALSE}
+knitr::include_graphics(file.path(project.dir,"/pictures/heroes2.jpg"))
+```
+
+Players work together to "push lanes" (kill computer controlled enemies called creeps) in order to destroy towers:
+
+```{r, include =FALSE}
+knitr::include_graphics(file.path(project.dir,"/pictures/gameplay_tower.gif"))
+```
+
+And in order to destroy the opponents' barracks (which produce the opposing team's creeps)
+
+```{r, include = FALSE}
+knitr::include_graphics(file.path(project.dir,"pictures/barracks.jpg"))
+
+```
+
+
+With the ultimate goal of destroying the opposing team's ancient. (This wins the game)
+
+```{r, include = FALSE}
+knitr::include_graphics(file.path(project.dir,"/pictures/ancient.jpg"))
+```
+
+Note: Most images were taken from the Dota 2 Wiki: https://dota2.gamepedia.com/Dota_2_Wiki
+## 3. Importing the Data
+
+```{r}
+match <-fread(file.path(project.dir, data.dir, "match.csv"))
+
+#match
+
+players <- fread(file.path(project.dir, data.dir, "players.csv"))
+
+#players
+
+chat <- fread(file.path(project.dir, data.dir, "chat.csv"))
+
+#chat
+
+test_player <- fread(file.path(project.dir, data.dir, "test_player.csv"))
+
+hero_names <- fread(file.path(project.dir, data.dir, "hero_names.csv"))
+
+
+players_trim <- players %>% dplyr::select(match_id, hero_id, player_slot) #we won't need most of the varaibles in the players dataset. Just get match_id, hero_id, and player_slot
+
+match_trim <- match %>% filter(game_mode == 22)  %>% dplyr::select(match_id, radiant_win) #There are only a few entries that don't have this game mode. Let's just restrict our analysis to this one game mode.
+
+```
+
+
+### 4) Which heroes are popular?.
+
+
+```{r}
+# Counts the frequency of hero_id over all 50k games
+hero_counts <-players_trim %>% dplyr::count(hero_id) 
+
+# Assigns names to each hero_id using the hero_names table
+hero_counts_names <-hero_counts %>% dplyr::inner_join(hero_names)
+
+# Computes the proportion of matches where the hero is played for each hero
+hero_props <- hero_counts_names %>% dplyr::mutate( prop_played = n/dim(players_trim)[1]) %>% dplyr::select(hero_id,localized_name, prop_played)# get number of time each hero was played
+```
+
+```{r}
+
+my_bar <- ggplot(data=hero_props, aes(x=hero_id, y=prop_played)) +
+  geom_bar(stat="identity", width=1 ,fill="steelblue")+   geom_text(aes(label = ""), vjust=-0.3, size=3.5) + labs(title = "Frequency of Heroes by Proportion of Games Played", x = "Hero Id", y = "Proportion of Games")+ theme_minimal()
+my_bar 
+
+```
+
+It's hard to get any useful information out of this, other than the fact that heroes are not all equally popular. There are over a hundred heroes, after all, and we aren't that interested in who is the 68th most popular. Let's just look at the top 10 heroes.
+
+
+```{r} 
+
+# Arranges the proportions of heros played in descending order and grabs top 10
+top10played <-hero_props %>% arrange(desc(prop_played)) %>% head(10)
+
+#change the order of factor levels by specifying the order explicitly
+#so that ggplot will make a pareto chart
+top10played$localized_name <- factor(top10played$localized_name, levels = top10played$localized_name[order(top10played$prop_played)])
+
+
+## Produces a bar plot that compares the proportion of the top 10 heroes
+top10played_bar <- ggplot(data=top10played, aes(x=localized_name, y=prop_played)) +
+  geom_bar(stat="identity", width=0.5 ,fill="steelblue")+   geom_text(aes(label=prop_played), vjust=-0.3, size=3.5) + theme_minimal()
+  
+
+top10played_bar +coord_flip() +  labs(title = "Top 10 Heroes by Proportion of Games Played", x = "Hero", y = "Proportion of Games")
+
+
+
+
+```
+
+I was a bit surprised to see Shadow Fiend and Invoker at the top of this list. While they are very good heroes, they are also extremely difficult to play. I personally usually steered clear of them for that reason. Many of the heroes listed here had something else in common, which we'll return to in a moment.
+
+### 4.5) Which heroes win the most often?
+```{r}
+
+# to figure out the win rate per char, group matches by character and get the mean win rate.
+# proportion of matches by hero
+# first get vector
+# find the number of games each hero was in and divide that number by the total number of games
+
+#this reduces the number of rows to 48670
+
+
+wins <- players_trim %>% inner_join(match_trim) %>% mutate(Radiant = ifelse(player_slot < 100, TRUE, FALSE), radiant_win = ifelse(radiant_win == "True", TRUE, FALSE), player_win = ifelse(radiant_win == Radiant, TRUE, FALSE))
+#here we infer whether a player won or not by looking at their team. If they are radiant and radiant won, then the player won, if they are not radiant and radiant didn't win, then the player won, otherwise they lost.
+
+winrate <- wins %>% group_by(hero_id)%>% mutate(win_rate =mean(player_win)) %>%  distinct(hero_id, win_rate)
+
+winrate_names <- winrate %>% inner_join(hero_names) %>% dplyr::select(hero_id, localized_name, win_rate)
+
+top10winrate <- winrate_names %>% arrange(desc(win_rate)) %>% head(10)
+
+top10winrate$localized_name <- factor(top10winrate$localized_name, levels = top10winrate$localized_name[order(top10winrate$win_rate)])
+
+top10hero_winrate <- ggplot(data=top10winrate, aes(x=localized_name, y=win_rate)) +
+  geom_bar(stat="identity", width=0.5 ,fill="steelblue")+   geom_text(aes(label=win_rate), vjust=-0.3, size=3.5) +
+  theme_minimal()
+top10hero_winrate +coord_flip() +  labs(title = "Top 10 Heroes by Win Rate", x = "Hero", y = "Win Rate")
+
+```
+
+I wasn't terribly surprised by anyone on this list, although I might perhaps have been surprised that certain heroes weren't on this list. However, since Dota 2 is a team sport, whether a hero is "good" on his own is less important than how that hero synergizes with the rest of the heroes on his team.
+
+
+
+
+###Hero Roles: Carries and Supports
+I was interested in finding what the optimal team composition might be. To that end, I wanted to investigate hero roles. Hero "roles" are determined by that hero's abilities, strengths, and weaknesses. There are certain things that particular heroes are naturally good at, which determines how they should be played in a match. Many of these roles are complementary, and one thing I wanted to investigate is how team diversity affects the win rate of a team.
+```{r, include = FALSE}
+
+
+carries = c("Abaddon",
+"Alchemist",
+"Anti-Mage",
+"Arc Warden",
+
+"Bloodseeker",
+"Brewmaster",
+"Bristleback",
+"Broodmother",
+
+"Chaos Knight",
+"Clinkz",
+
+"Death Prophet",
+"Doom",
+"Dragon Knight",
+"Drow Ranger",
+
+"Ember Spirit",
+
+"Faceless Void",
+
+"Gyrocopter",
+
+"Huskar",
+
+"Invoker",
+
+"Juggernaut",
+
+"Kunkka",
+
+"Legion Commander",
+"Leshrac",
+"Lifestealer",
+"Lina",
+"Lone Druid",
+"Luna",
+"Lycan",
+
+"Medusa",
+"Meepo",
+"Mirana",
+"Monkey King",
+"Morphling",
+
+"Naga Siren",
+"Nature's Prophet",
+"Necrophos",
+"Night Stalker",
+
+"Outworld Devourer",
+
+"Pangolier",
+"Phantom Assassin",
+"Phantom Lancer",
+
+"Queen of Pain",
+
+"Razor",
+"Riki",
+
+"Shadow Fiend",
+"Silencer",
+"Skeleton King",
+"Slardar",
+"Slark",
+"Sniper",
+"Spectre",
+"Spirit Breaker",
+"Storm Spirit",
+"Sven",
+
+"Templar Assassin",
+"Terrorblade",
+"Tinker",
+"Tiny",
+"Troll Warlord",
+
+"Ursa",
+
+"Viper",
+
+"Weaver",
+"Windranger",
+"Wraith King"
+)
+
+
+supports = c(
+  "Abaddon",
+"Alchemist",
+"Ancient Apparition",
+
+"Bane",
+
+"Chen",
+"Crystal Maiden",
+
+"Dark Willow",
+"Dazzle",
+"Disruptor",
+
+"Earthshaker",
+"Enchantress",
+
+"Grimstroke",
+
+"Io",
+
+"Jakiro",
+
+"Keeper of the Light",
+"Kunkka",
+
+"Leshrac",
+"Lich",
+"Lina",
+"Lion",
+
+"Mirana",
+
+"Naga Siren",
+
+"Ogre Magi",
+"Omniknight",
+"Oracle",
+
+"Phoenix",
+
+"Rubick",
+
+"Sand King",
+"Shadow Demon",
+"Shadow Shaman",
+"Silencer",
+"Skywrath Mage",
+
+"Treant Protector",
+
+"Underlord",
+"Undying",
+
+"Vengeful Spirit",
+"Venomancer",
+"Visage",
+
+"Warlock",
+"Windranger",
+"Winter Wyvern",
+"Witch Doctor",
+"Wraith King"
+  
+  
+)
+
+
+
+
+
+
+
+#the variable number_carries gives the number of carries per team in a match of Dota 2.                                          
+number_carries <- players_trim %>% inner_join(match_trim) %>% mutate(Radiant = ifelse(player_slot < 100, TRUE, FALSE), radiant_win = ifelse(radiant_win == "True", TRUE, FALSE)) %>%inner_join(hero_names) %>% dplyr::select(match_id, hero_id, radiant_win, Radiant, localized_name) %>%   mutate(carry = ifelse(localized_name %in% carries, TRUE, FALSE) )%>% group_by(match_id, Radiant) %>% tally(carry) %>% mutate(num_carries = n) %>% dplyr::select(match_id,Radiant, num_carries)
+
+#Match_trim which has 48670 rows. When we join this with players_trim the joined result will have 10 x 48670 = 486700 since there are 10 players for each match. Joining with hero_names gives us 37 fewer rows (486663)
+
+
+
+ggplot(number_carries, aes(x=num_carries)) + geom_histogram(binwidth= 1)  +labs(title="Number of Carries on a Team",x="Carries", y = "Count")  
+
+
+
+summary(number_carries$num_carries)
+
+ggplot(number_carries, aes(y=num_carries)) + geom_boxplot() +labs(title="Number of Carries on a Team",x="Carries", y = "Count") +coord_flip()
+```
+
+So we see that the distribution of the number of carries on a team is symmetric and centered at 3. Does this distribution mirrior the optimal number of carries on a team? That is, should you have 3 carries on you team to optimize your chances at winning?
+
+```{r}
+
+
+#----------------------carries vs wins ----------------------------------
+
+carries_wins <- number_carries %>%inner_join(wins) #just join num_carries with wins
+carries_numwins <- carries_wins %>% group_by(num_carries) %>%tally(player_win)
+
+
+
+carries_winrate <- carries_numwins %>% mutate(winrate = n/dim(carries_wins)[1])
+sum(carries_winrate$winrate)
+
+#note that the sum of the winrates is exactly 0.5 which is to be expected. If you pick a randomly selected dota 2 team, their probability of winning should be 50%.
+                                                    
+qplot(x = carries_winrate$num_carries,y = carries_winrate$winrate) +labs(title="Number of Carries vs Winrate",x="Carries", y = "Winrate")
+
+
+qplot(x = carries_numwins$num_carries,y = carries_numwins$n) +labs(title="Number of Carries vs Number of Wins",x="Carries", y = "Wins")
+
+
+# From the individual player's perspective, how does picking a carry influence your winrate? Is the probability of winning given that you've picked a carry significantly different from 50%?
+
+#-------------------an overall look at which roles are played -----------------------
+
+roles <- players_trim  %>%inner_join(hero_names) %>% mutate(carry = ifelse(localized_name %in% carries, TRUE, FALSE), support= ifelse(localized_name %in% supports, TRUE, FALSE) , role = case_when(carry & !support ~ "carry", support & !carry ~ "support", !carry & !support ~"other",carry & support  ~ "both"))%>% distinct(hero_id, localized_name ,carry, support, role) %>% arrange(hero_id)
+
+
+role_counts <-hero_counts_names %>% inner_join(roles)
+#roles_count <- roles %>% group_by(hero_id) %>% tally(hero_id) %>% inner_join(roles) 
+  
+
+
+roles_bar <- ggplot(data=role_counts, aes( x=hero_id, y=n, fill =  role)) +geom_bar(stat="identity") +  labs(title = "Frequency of Heroes by Role", x = "Hero", y = "Number of Games") + scale_fill_manual("role", values = c("carry" = "tomato", "support" = "steelblue", "both" = "mediumorchid", other = "gold"))
+ 
+
+roles_bar
+
+
+#--------------------------top 10 played by role ---------------------
+
+top10played_roles <- top10played %>% inner_join(roles)
+top10played_roles$localized_name <- factor(top10played$localized_name, levels = top10played_roles$localized_name[order(top10played$prop_played)])
+
+top10played_roles_bar <- ggplot(data=top10played_roles, aes( x=localized_name, y=prop_played, fill =  role)) +
+  geom_bar(stat="identity", width=0.5)+   geom_text(aes(label=prop_played)) +theme_minimal() + scale_fill_manual("role", values = c("carry" = "tomato", "support" = "steelblue", "both" = "mediumorchid", other = "gold"))
+top10played_roles_bar +coord_flip() +  labs(title = "Top 10 Heroes by Proportion of Games Played", x = "Hero", y = "Proportion of Games")
+
+#---------------top 10 winrate by role ---------------------#
+top10winrate_roles <- top10winrate %>% inner_join(roles)
+top10winrate_roles$localized_name <- factor(top10winrate$localized_name, levels = top10winrate_roles$localized_name[order(top10winrate$win_rate)])
+
+top10winrate_roles_bar <- ggplot(data=top10winrate_roles, aes( x=localized_name, y=win_rate, fill =  role)) +
+  geom_bar(stat="identity", width=0.5)+   geom_text(aes(label=win_rate)) +theme_minimal() + scale_fill_manual("role", values = c("carry" = "tomato", "support" = "steelblue", "both" = "mediumorchid", other = "gold"))
+
+top10winrate_roles_bar +coord_flip() +  labs(title = "Top 10 Heroes by Win Rate", x = "Hero", y = "Win Rate")
+
+
+
+
+```
+
+
