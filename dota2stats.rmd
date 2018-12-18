@@ -1,0 +1,302 @@
+
+---
+title: "DoTA2"
+author: "Daavid Stein"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r, echo=FALSE, out.width = '85%'}
+# knitr::include_graphics()
+```
+
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(tidy=TRUE)
+knitr::opts_chunk$set(tidy.opts=list(width.cutoff=70))
+knitr::opts_chunk$set(fig.height=4, fig.width=6)
+
+PKGs <- c("data.table","dplyr","ggplot2", "DescTools")
+
+
+lapply(PKGs, library, character.only = TRUE ,quietly = T,  warn.conflicts = FALSE)
+```
+
+
+
+```{r file_management, include = FALSE}
+
+project.dir = "/home/broken-haiku/Desktop/NCF_Data_Science/Stats/final_project"
+output.dir <- "/Output"
+data.dir = "/home/broken-haiku/Desktop/NCF_Data_Science/Munging/Project2/dota2/Datasets/dota2"
+setwd(project.dir)
+```
+
+
+
+```{r ,include = FALSE}
+match <-fread(file.path(data.dir, "match.csv"))
+
+#match
+
+players <- fread(file.path(data.dir, "players.csv"))
+
+
+#chat
+
+test_player <- fread(file.path(data.dir, "test_player.csv"))
+
+hero_names <- fread(file.path(data.dir, "hero_names.csv"))
+
+
+players_trim <- players %>% dplyr::select(match_id, hero_id, player_slot) #we won't need most of the varaibles in the players dataset. Just get match_id, hero_id, and player_slot
+
+match_trim <- match %>% filter(game_mode == 22)  %>% dplyr::select(match_id, radiant_win) #There are only a few entries that don't have this game mode. Let's just restrict our analysis to this one game mode.
+
+```
+
+###Radiant wins more often?
+
+In our Data Munging Project, our group found that Radiant wins more often than dire. We found this out by doing a simple barchart, but we didn't actually get the exact proportions. So let's find out exactly how often Radiant wins.
+
+```{r}
+
+sum(match_trim$radiant_win)/dim(match_trim)[1]
+
+```
+So Radiant wins about 52% of the time. This means that Dire wins 100 - 0.52 = 48% of the time.  Let's see if this is significant by constructing the bootstrap distribution for Radiant's winrate.
+```{r, echo = FALSE, results = "hide"}
+wins <- players_trim %>% inner_join(match_trim) %>% mutate(Radiant = ifelse(player_slot < 100, TRUE, FALSE)) %>% distinct(match_id, Radiant, radiant_win) 
+
+
+```
+```{r}
+
+```
+
+
+```{r, echo = FALSE, cache = TRUE} 
+#remove eval = t
+set.seed(1)
+index <- 1:nrow(match_trim)
+winrate.boot <- matrix(NA, nrow = 10000)
+for (i in 1:10000) {
+index.boot <- sample(index, replace = TRUE)
+wins.boot <- match_trim[index.boot, ] #bootstrapped dataset
+winrate.boot[i] <- sum(wins.boot$radiant_win)/dim(wins.boot)[1]
+}
+
+quantiles <- quantile(winrate.boot, c(0.025, 0.975))
+quantiles
+hist(winrate.boot, main = "Bootstrap Distribution of Radiant Winrate",
+xlab = "Radiant Winrate")
+points(x = quantiles, y = c(0, 0), pch = "X", col = "blue")
+summary(winrate.boot)
+
+```
+
+Our 95% bootstrap confidence inerval is (0.515 0.524). The bootstrap distribution is centered 51.9%. The lower bound of the distribution is 50.9%. So we should feel confident that Radiant wins more often than Dire.  
+
+Since the data is from a randomized experiment and we have more than 15 successes and failures, we can find a confidence interval for the population proportion p using the following formula:
+
+$$\hat p \pm 1.96 \cdot \frac{\sqrt{\hat p(1- \hat p)} }{\sqrt n}$$
+```{r, echo = FALSE}
+phat = 0.52
+n = dim(match_trim)[1]
+e = 1.96*sqrt(phat*(1-phat)/n)
+I = c(phat - e, phat + e)
+I
+```
+We are 95% confident that the true population winrate for Radiant lies between 0.516 and 0.524. This is very close to the 95% confidence interval we got from the bootstrap distribution (0.515, 0.524)
+
+
+We can also construct the contingency table and ratio of proportions:
+
+```{r,echo = FALSE}
+contingency <- wins %>% select(match_id,radiant_win, Radiant) %>% mutate(Dire = !Radiant, dire_win = !radiant_win, Team=ifelse(Radiant, "Radiant", "Dire"), winner = ifelse(radiant_win, "Radiant Win", "Dire Win")) %>% select(Team, winner)
+
+my_table <- table(contingency)
+
+con_table <- prop.table(my_table,1)
+con_table
+rat <- con_table[1,2]/con_table[1,1]
+rat
+```
+In our sample, Radiant is 8 percent more likely to win than Dire. These results are extremely surprising, since the only difference between the teams is where they start on the map! This should indicate to developers that to achieve balance, either starting locations should be randomized or players should not be able to pick their team.
+
+
+```{r include = FALSE}
+#wilson confidence interval
+#prop.test(sum(match_trim$radiant_win)/dim(match_trim)[1],dim(match_trim)[1], correct = FALSE)
+
+```
+
+```{r include = FALSE}
+pushers <- c("Broodmother",
+
+"Chaos Knight",
+"Chen",
+"Clinkz",
+
+"Death Prophet",
+"Dragon Knight",
+"Drow Ranger",
+"Enchantress",
+"Enigma",
+
+"Invoker",
+
+"Jakiro",
+"Juggernaut",
+
+"Leshrac",
+"Lone Druid",
+"Luna",
+"Lycan",
+
+"Meepo",
+
+"Phantom Lancer",
+"Pugna",
+
+"Razor",
+
+"Shadow Shaman",
+
+"Terrorblade",
+"Tinker",
+"Tiny",
+"Troll Warlord",
+"Venomancer",
+"Visage"
+)
+
+
+
+
+#   
+# 
+# binary<-function(p_number) {
+#   #taken from https://www.r-bloggers.com/decimal-to-binary-in-r/
+#   bsum<-0
+#   bexp<-1
+#   while (p_number > 0) {
+#      digit<-p_number %% 2
+#      p_number<-floor(p_number / 2)
+#      bsum<-bsum + digit * bexp
+#      bexp<-bexp * 10
+#   }
+#   return(bsum)
+# }
+
+
+digitsum = function (x) {sum(as.numeric(unlist(strsplit(as.character(x), split="")))) 
+  #taken from https://stackoverflow.com/questions/18675285/digit-sum-function-in-r
+  }
+
+```
+
+
+Players can pick different heroes with different roles. Different hero roles are better at different things. One role is called a "pusher." A pusher's job is to "push" lanes and destroy enemy structures like towers and barracks. We could guess then, that the number of pushers on a team might be negatively associated with the number of enemy structures still standing at the end of the game. Let's find out if this is indeed the case.
+```{r include = FALSE}
+number_pushers <- players_trim %>% inner_join(match_trim) %>% mutate(Radiant = ifelse(player_slot < 100, TRUE, FALSE), radiant_win = ifelse(radiant_win == "True", TRUE, FALSE)) %>%inner_join(hero_names) %>% dplyr::select(match_id, hero_id, radiant_win, Radiant, localized_name) %>%   mutate(pusher = ifelse(localized_name %in% pushers, TRUE, FALSE) )%>% group_by(match_id, Radiant) %>% tally(pusher) %>% mutate(num_pushers = n) %>% dplyr::select(match_id,Radiant,num_pushers) 
+
+
+#here we have to convert the tower status variable to binary which is how it is intended to be looked at. The rightmost 11 bits represent an individual tower which will have value 1 if the tower is still standing at the end of the game and 0 otherwise.
+```
+```{r, include = FALSE}
+towers <- match %>% select(match_id,tower_status_radiant,tower_status_dire, barracks_status_dire, barracks_status_radiant) %>% transmute(match_id = match_id, tower_status_radiant = DecToBin(tower_status_radiant), tower_status_dire = DecToBin(tower_status_dire), barracks_status_dire = DecToBin(barracks_status_dire), barracks_status_radiant = DecToBin(barracks_status_radiant))
+
+
+towers_standing <- stats::aggregate( . ~ match_id, data=towers, FUN=digitsum) %>% suppressWarnings
+```
+
+```{r, include = FALSE}
+towers_standing <- towers_standing %>% as.data.frame
+
+towers_standing <- towers_standing %>% dplyr::filter(!is.na(tower_status_radiant) & !is.na(tower_status_dire), !is.na(barracks_status_dire), !is.na(barracks_status_radiant))
+
+
+
+pushers_towers <- number_pushers %>% inner_join(towers_standing) %>% dplyr::filter(!is.na(tower_status_radiant) & !is.na(tower_status_dire), !is.na(barracks_status_dire), !is.na(barracks_status_radiant))
+
+
+radiant_pushers_towers <- pushers_towers %>% filter(Radiant == TRUE)
+```
+
+In order to get a sensible scatterplot and correlation coefficient that makes sense we need to get the AVERAGE tower_status per num_pushers.
+
+```{r, echo = FALSE}
+avg_tower_dire <- radiant_pushers_towers %>% group_by(num_pushers) %>% summarize(mean_tower_status_dire =mean(tower_status_dire), n = n())
+```
+```{r, echo =FALSE}
+plot(avg_tower_dire$num_pushers,avg_tower_dire$mean_tower_status_dire,col = "red",
+pch = 19, xlab = "Pushers on Radiant Team" , ylab = "Avg Intact Opponent Towers",
+main = "Radiant Pushers vs. Opponent Towers")
+
+```
+
+There definitely does appear to be a negative association between the number of pushers on a Radiant team [this was much clearer from the plot until something happened last night and my aggregate data changed somehow] and the number of towers still standing on the opponent's (Dire) team - at least until the number of pushers is 5. This does make a certain amount of sense, because a role-homogeneous team is not healthy - you probably want at least one "hard" carry. (a different role). Furthermore, there actually isn't much data on teams with 5 pushers:
+
+```{r}
+avg_tower_dire[6,]
+
+```
+There are actually only 4 such teams in the dataset. So let's remove teams with 5 pushers before we check the correlation coefficient.
+```{r}
+avg_tower_dire_trim <- avg_tower_dire[1:5,]
+```
+
+
+```{r}
+stats::cor(avg_tower_dire_trim$num_pushers,avg_tower_dire_trim$mean_tower_status_dire)
+
+plot(avg_tower_dire_trim$num_pushers,avg_tower_dire_trim$mean_tower_status_dire,col = "red",
+pch = 19, xlab = "Pushers on Radiant Team" , ylab = "Avg Intact Opponent Towers",
+main = "Radiant Pushers vs. Opponent Towers")
+```
+
+We see that there is a strong negative correlation between pushers and opponents' towers. 
+```{r include = FALSE}
+
+
+dire_pushers_towers <- pushers_towers %>% filter(Radiant == FALSE)
+stats::cor(dire_pushers_towers$num_pushers, dire_pushers_towers$tower_status_radiant)
+
+
+
+
+```
+Now let's fit a model.
+```{r}
+
+fit <- lm(mean_tower_status_dire~num_pushers,data = avg_tower_dire_trim)
+coefficients(fit)
+```
+
+Interpretation of Slope: For every pusher on the Radiant team, we predict the average # of Dire towers remaining will be decreased by 0.02.
+
+```{r}
+plot(avg_tower_dire_trim$num_pushers,avg_tower_dire_trim$mean_tower_status_dire,col = "red",
+pch = 19, xlab = "Pushers on Radiant Team" , ylab = "Avg Intact Opponent Towers",
+main = "Radiant Pushers vs. Opponent Towers")
+abline(fit, lwd = 2, col = "blue")
+```
+
+###$R^2$
+```{r}
+
+
+stats::cor(avg_tower_dire_trim$num_pushers,avg_tower_dire_trim$mean_tower_status_dire)^2
+
+
+```
+Looking at r^2, however, we see that only 42% of the variability in average Dire tower status can be explained by pushers. From this I would conclude that doing a multiple linear regression is indicated, possibly with # of carries as a second variable with an interaction term.
+
+
